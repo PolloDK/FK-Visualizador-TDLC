@@ -4,6 +4,7 @@ import asyncio
 from playwright.async_api import async_playwright
 import csv
 from datetime import datetime
+import re
 
 BASE_URL = "https://www.tdlc.cl/sentencia/"
 N_PAGINAS = 21  # puedes ajustar según necesites
@@ -40,14 +41,25 @@ async def extraer_sentencias_de_pagina(page, numero_pagina):
                         numero = await a.inner_text()
                         break
 
-            # Código
+            # Detectar códigos tipo NC-3-04, C N° 411-20, CIP 12-23, RRE-1-18, etc.
             codigo = ""
+            # Patrones posibles: sigla (letras), opcional "N°", número, guion, número
+            patron_codigo = re.compile(r"\b([A-Z]{1,5})(\s*N°)?\s*-?\s*\d{1,4}\s*-\s*\d{1,4}\b", re.IGNORECASE)
+
             for h2 in h2s:
-                if not await h2.query_selector("a"):
+                texto = await h2.inner_text()
+                texto_limpio = texto.strip().replace('\u00a0', ' ')  # reemplaza non-breaking space
+                match = patron_codigo.search(texto_limpio)
+
+                if match:
+                    codigo = texto.strip()
+                    break
+
+            if not codigo:
+                print(f"[⚠️ No se detectó código en artículo] Títulos escaneados:")
+                for h2 in h2s:
                     texto = await h2.inner_text()
-                    if texto.strip().startswith("C-"):
-                        codigo = texto.strip()
-                        break
+                    print(f"    ⏺ {texto}")
 
             # Descripción
             desc_elem = await articulo.query_selector(".elementor-widget-text-editor")

@@ -23,9 +23,9 @@ def normalizar_fecha(fecha_raw):
         return f"{anio}-{mes}-{dia}"
     except Exception as e:
         print(f"❌ Error al formatear fecha '{fecha_raw}': {e}")
-        return fecha_raw  # si falla, se deja como estaba
+        return fecha_raw
 
-def extraer_campos_detalle_sentencia(html):
+def extraer_campos_detalle_resolucion(html):
     soup = BeautifulSoup(html, "html.parser")
 
     def extraer_por_titulo(titulo):
@@ -38,26 +38,39 @@ def extraer_campos_detalle_sentencia(html):
         contenido = columna_derecha.select_one(".jet-listing-dynamic-field__content, .jet-listing-dynamic-terms__link")
         return contenido.get_text(separator=" ", strip=True) if contenido else ""
 
-    # Campos del lado izquierdo
     fecha_raw = extraer_por_titulo("FECHA DE DICTACIÓN:")
     fecha = normalizar_fecha(fecha_raw)
-    rol = extraer_por_titulo("rol de causa:")
-    procedimiento = extraer_por_titulo("procedimiento:")
+    rol = extraer_por_titulo("ROL DE CAUSA:")
+    procedimiento = extraer_por_titulo("PROCEDIMIENTO:")
     partes = extraer_por_titulo("PARTES:")
     ministros = extraer_por_titulo("MINISTROS Y MINISTRAS QUE CONCURREN AL ACUERDO:")
-    redactor = extraer_por_titulo("MINISTRO/A REDACTOR/A:")
+    redactor = extraer_por_titulo("REDACCIÓN:")
     conducta = extraer_por_titulo("CONDUCTA:")
     industria = extraer_por_titulo("INDUSTRIA:")
     articulo = extraer_por_titulo("ARTÍCULO (NORMA):")
+    objeto_proceso = extraer_por_titulo("OBJETO DE PROCESO:")
+    resultado = extraer_por_titulo("RESULTADO DEL TDLC:")
+    voto_contra = extraer_por_titulo("VOTO EN CONTRA:")
+    voto_prevencion = extraer_por_titulo("VOTO PREVENCIÓN:")
+    
+    # Resultado Excma. Corte Suprema
+    resultado_cs = ""
+    link_cs = ""
 
-    # Secciones adicionales que compartiste
-    resumen = extraer_por_titulo("resumen de controversia:")
-    resultado = extraer_por_titulo("resultado del tdlc:")
-    voto_contra = extraer_por_titulo("voto en contra:")
-    voto_prevencion = extraer_por_titulo("voto prevención:")
-    temas = extraer_por_titulo("temas que trata:")
+    # Buscar por contenido alternativo: "No se interpusieron recursos" o texto que esté dentro del widget
+    posibles_bloques_cs = soup.find_all("div", class_="jet-listing-dynamic-field__content")
+    for bloque in posibles_bloques_cs:
+        texto = bloque.get_text(strip=True)
+        if "No se interpusieron recursos" in texto or "Resultado Excma. Corte Suprema" in texto:
+            resultado_cs = texto
+            enlace = bloque.find("a")
+            if enlace and enlace.has_attr("href"):
+                link_cs = enlace["href"]
+            break
 
-    # Carátula desde meta title
+
+    temas = extraer_por_titulo("TEMAS QUE TRATA:")
+
     titulo = soup.find("meta", property="og:title")
     caratula = titulo["content"].strip() if titulo else soup.title.string.strip()
 
@@ -72,10 +85,12 @@ def extraer_campos_detalle_sentencia(html):
         "conducta": conducta,
         "industria": industria,
         "articulo_norma": articulo,
-        "resumen_controversia": resumen,
+        "objeto_proceso": objeto_proceso,
         "resultado_tdlc": resultado,
         "voto_en_contra": voto_contra,
         "voto_prevencion": voto_prevencion,
+        "resolucion_corte_suprema": resultado_cs,
+        "link_resolucion_corte_suprema": link_cs,
         "temas_tratados": temas,
     }
 
@@ -89,10 +104,10 @@ def procesar_una_url(url):
             page.wait_for_selector(".elementor-section", timeout=15000)
             time.sleep(1)
             html = page.content()
-            data = extraer_campos_detalle_sentencia(html)
+            data = extraer_campos_detalle_resolucion(html)
             data["url"] = url
         except Exception as e:
-            print(f"Error con URL {url}: {e}")
+            print(f"❌ Error con URL {url}: {e}")
             data = {
                 "fecha_dictacion": "",
                 "caratula": "",
@@ -104,10 +119,12 @@ def procesar_una_url(url):
                 "conducta": "",
                 "industria": "",
                 "articulo_norma": "",
-                "resumen_controversia": "",
+                "objeto_proceso": "",
                 "resultado_tdlc": "",
                 "voto_en_contra": "",
                 "voto_prevencion": "",
+                "resolucion_corte_suprema": "",
+                "link_resolucion_corte_suprema": "",
                 "temas_tratados": "",
                 "url": url
             }
@@ -115,17 +132,18 @@ def procesar_una_url(url):
         return data
 
 # Leer el CSV con las URLs
-with open("data/sentencias_listado.csv", newline="", encoding="utf-8") as f:
+with open("backend/data/resoluciones_listado.csv", newline="", encoding="utf-8") as f:
     reader = csv.DictReader(f)
     urls = [row["url_ficha"] for row in reader]
 
 data_detalle = []
-for url in tqdm(urls, desc="Procesando sentencias"):
+for url in tqdm(urls, desc="Procesando resoluciones"):
     resultado = procesar_una_url(url)
     data_detalle.append(resultado)
+#data_detalle = [procesar_una_url(urls[0])]
 
 # Guardar en CSV
-output_file = "data/sentencias_detalle.csv"
+output_file = "backend/data/resoluciones_detalle.csv"
 with open(output_file, "w", newline="", encoding="utf-8") as f:
     fieldnames = [
         "fecha_dictacion",
@@ -138,10 +156,12 @@ with open(output_file, "w", newline="", encoding="utf-8") as f:
         "conducta",
         "industria",
         "articulo_norma",
-        "resumen_controversia",
+        "objeto_proceso",
         "resultado_tdlc",
         "voto_en_contra",
         "voto_prevencion",
+        "resolucion_corte_suprema",
+        "link_resolucion_corte_suprema",
         "temas_tratados",
         "url"
     ]
