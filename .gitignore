@@ -1,3 +1,7 @@
 backend/data
 
 data/
+
+__pycache__/
+
+.env

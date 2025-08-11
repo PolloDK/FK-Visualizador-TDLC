@@ -1,4 +1,6 @@
 # src/sentencias_tdlc_actualizador.py
+import sys, os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import csv
 import os
@@ -7,6 +9,7 @@ from bs4 import BeautifulSoup
 import time
 from datetime import datetime
 from tqdm import tqdm
+from notification_module.email_notifier import enviar_aviso_nuevo_documento
 
 
 class SentenciasTDLC:
@@ -94,19 +97,25 @@ class SentenciasTDLC:
 
         def normalizar_fecha(fecha_raw):
             try:
-                partes = fecha_raw.strip().replace(",", "").split()
-                meses = {
-                    "enero": "01", "febrero": "02", "marzo": "03", "abril": "04",
-                    "mayo": "05", "junio": "06", "julio": "07", "agosto": "08",
-                    "septiembre": "09", "setiembre": "09", "octubre": "10",
-                    "noviembre": "11", "diciembre": "12"
-                }
-                mes = meses[partes[0].lower()]
-                dia = partes[1].zfill(2)
-                anio = partes[2]
-                return f"{anio}-{mes}-{dia}"
-            except:
+                fecha_raw = fecha_raw.lower().replace("de", "").replace(",", "").strip()
+                partes = fecha_raw.split()
+                if len(partes) == 3:
+                    dia = partes[0].zfill(2)
+                    mes_nombre = partes[1]
+                    anio = partes[2]
+                    meses = {
+                        "enero": "01", "febrero": "02", "marzo": "03", "abril": "04",
+                        "mayo": "05", "junio": "06", "julio": "07", "agosto": "08",
+                        "septiembre": "09", "setiembre": "09", "octubre": "10",
+                        "noviembre": "11", "diciembre": "12"
+                    }
+                    mes = meses.get(mes_nombre, "01")
+                    return f"{anio}-{mes}-{dia}"
                 return fecha_raw
+            except Exception as e:
+                print(f"⚠️ Error al normalizar fecha: {e}")
+                return fecha_raw
+
 
         fecha = normalizar_fecha(extraer("FECHA DE DICTACIÓN:"))
         caratula = soup.find("meta", property="og:title")
@@ -196,10 +205,18 @@ class SentenciasTDLC:
         for row in tqdm(nuevas, desc="📘 Detalles"):
             detalle = self.extraer_detalle_sentencia(row["url_ficha"])
             detalles.append(detalle)
-
+            # Enviar notificación por correo
+            try:
+                enviar_aviso_nuevo_documento(
+                    tipo="sentencia",
+                    titulo=detalle.get("caratula", "Sin título"),
+                    url=detalle.get("url", ""),
+                    fecha=detalle.get("fecha_dictacion", "Desconocida")
+                )
+            except Exception as e:
+                print(f"❌ Error al enviar correo de notificación: {e}")
         self.guardar_sentencias_detalle(detalles)
         print("✅ Detalles guardados con éxito.")
-
 
 if __name__ == "__main__":
     SentenciasTDLC().actualizar_si_hay_nuevas()
