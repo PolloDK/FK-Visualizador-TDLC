@@ -1,5 +1,4 @@
 # archivo: tdlc_estado_diario_scraper.py
-
 from playwright.sync_api import sync_playwright, TimeoutError
 from datetime import datetime, timedelta
 import pandas as pd
@@ -7,7 +6,6 @@ import requests
 import pytz
 import re
 import os
-
 
 class EstadoDiarioScraper:
     def __init__(self):
@@ -95,7 +93,7 @@ class EstadoDiarioScraper:
         # Convertir string "dd-mm-YYYY" a datetime
         tz = pytz.timezone("America/Santiago")
         fecha_dt = datetime.strptime(fecha_estado_diario_str, "%d-%m-%Y").date()
-        inicio_dt = tz.localize(datetime.combine(fecha_dt, datetime.min.time()))
+        inicio_dt = tz.localize(datetime.combine(fecha_dt - timedelta(days=3), datetime.min.time()))
         fin_dt = tz.localize(datetime.combine(fecha_dt + timedelta(days=1), datetime.min.time()))
 
         ts_inicio = int(inicio_dt.timestamp() * 1000)

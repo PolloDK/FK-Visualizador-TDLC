@@ -5,3 +5,7 @@ data/
 __pycache__/
 
 .env
+
+debug/
+
+rol_idcausa.csv

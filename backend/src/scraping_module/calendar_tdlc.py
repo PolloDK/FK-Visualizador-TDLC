@@ -1,37 +1,75 @@
+# scrape_calendar_forward_append.py
 from playwright.sync_api import sync_playwright
-import csv
-import os
-import time
+import csv, os, time
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
-class CalendarioHistoricScraper:
-    def __init__(self, url="https://consultas.tdlc.cl/audiencia", output_path="backend/data/calendario_audiencias.csv", limite_meses_sin_datos=3):
-        self.url = url
-        self.output_path = output_path
-        self.limite_meses_sin_datos = limite_meses_sin_datos
-        self.meses_sin_resultados = 0
-        self.nuevas_audiencias = []
+MESES_SIN_RESULTADOS_LIMITE = 3
+URL = "https://consultas.tdlc.cl/audiencia"
+CSV_PATH = "backend/data/calendar/calendario_audiencias.csv" 
 
-    def iniciar_navegador(self):
-        self.playwright = sync_playwright().start()
-        self.browser = self.playwright.chromium.launch(headless=True)
-        self.page = self.browser.new_page()
-        self.page.goto(self.url)
-        print("🌐 Navegador iniciado y página cargada")
+# ============== Utilidades CSV (append + dedupe) ==============
+HEADER = ["fecha","hora","rol","caratula","tipo_audiencia","estado","doc_resolucion"]
 
-    def cerrar_navegador(self):
-        self.browser.close()
-        self.playwright.stop()
-        print("🔒 Navegador cerrado correctamente")
+def cargar_keys_existentes(csv_path: str) -> set[tuple[str, str, str]]:
+    keys = set()
+    if not os.path.exists(csv_path):
+        return keys
+    with open(csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            key = (
+                (r.get("fecha") or "").strip(),
+                (r.get("hora") or "").strip(),
+                (r.get("rol") or "").strip(),
+            )
+            if any(key):  # ignora filas vacías
+                keys.add(key)
+    return keys
 
-    def extraer_audiencias_mes(self):
-        rows = self.page.query_selector_all("table#selectable tbody tr")
-        data = []
-        for row in rows:
-            cols = row.query_selector_all("td")
-            if not cols or len(cols) < 7:
-                continue
+def append_mes(csv_path: str, filas: list[dict], keys_existentes: set[tuple[str,str,str]]) -> int:
+    """Apendea filas nuevas (dedupe por fecha-hora-rol). Crea header si no existe."""
+    if not filas:
+        return 0
+
+    nuevos = []
+    for r in filas:
+        key = ((r.get("fecha") or "").strip(), (r.get("hora") or "").strip(), (r.get("rol") or "").strip())
+        if key and key not in keys_existentes:
+            nuevos.append({
+                "fecha": (r.get("fecha") or "").strip(),
+                "hora": (r.get("hora") or "").strip(),
+                "rol": (r.get("rol") or "").strip(),
+                "caratula": (r.get("caratula") or "").strip(),
+                "tipo_audiencia": (r.get("tipo_audiencia") or "").strip(),
+                "estado": (r.get("estado") or "").strip(),
+                "doc_resolucion": (r.get("doc_resolucion") or "").strip(),
+            })
+            keys_existentes.add(key)
+
+    if not nuevos:
+        print("🟰 Nada nuevo que agregar (todo duplicado).")
+        return 0
+
+    first_write = not os.path.exists(csv_path)
+    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+    with open(csv_path, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=HEADER)
+        if first_write:
+            writer.writeheader()
+        writer.writerows(nuevos)
+    print(f"💾 Agregadas {len(nuevos)} filas nuevas a {csv_path}")
+    return len(nuevos)
+
+# ============== Scraper ==============
+def extraer_audiencias_mes(page):
+    rows = page.query_selector_all("table#selectable tbody tr")
+    data = []
+    for row in rows:
+        cols = row.query_selector_all("td")
+        if not cols or len(cols) < 7:
+            continue
+        try:
             data.append({
                 "fecha": cols[0].inner_text().strip(),
                 "hora": cols[1].inner_text().strip(),
@@ -41,120 +79,119 @@ class CalendarioHistoricScraper:
                 "estado": cols[5].inner_text().strip(),
                 "doc_resolucion": cols[6].query_selector("a").get_attribute("href") if cols[6].query_selector("a") else ""
             })
-        return data
+        except Exception:
+            continue
+    return data
 
-    def ir_a_mes(self, mes_deseado, anio_deseado):
-        MES_NUM_A_NOMBRE = {
-            1: "enero", 2: "febrero", 3: "marzo", 4: "abril",
-            5: "mayo", 6: "junio", 7: "julio", 8: "agosto",
-            9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre"
-        }
-        mes_nombre = MES_NUM_A_NOMBRE[mes_deseado].lower()
-        print(f"\n🔄 Navegando al mes: {mes_nombre} {anio_deseado}")
+def ir_a_mes(page, mes_deseado, anio_deseado):
+    MES_NUM_A_NOMBRE = {
+        1: "enero", 2: "febrero", 3: "marzo", 4: "abril",
+        5: "mayo", 6: "junio", 7: "julio", 8: "agosto",
+        9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre"
+    }
+    mes_nombre_deseado = MES_NUM_A_NOMBRE[mes_deseado].lower()
+    print(f"🧭 Buscando {mes_nombre_deseado} {anio_deseado}")
 
+    try:
+        page.wait_for_selector("div.controls", timeout=15000)
+    except Exception:
+        page.screenshot(path="error_cargando_calendario.png")
+        raise Exception("❌ Calendario no cargó correctamente")
+
+    # Intentos: avanza mes a mes hacia adelante (máx 36 pasos)
+    for _ in range(36):
         try:
-            self.page.wait_for_selector("div.controls", timeout=15000)
-        except:
-            self.page.screenshot(path="error_cargando_calendario.png")
-            raise Exception("❌ No se cargó el calendario")
+            mes_actual = page.locator("div.title-month span").first.text_content(timeout=5000).strip().lower()
+            anio_actual = page.locator("div.title-year span").first.text_content(timeout=5000).strip()
+            print(f"📅 En calendario: {mes_actual} {anio_actual}")
+            if mes_actual == mes_nombre_deseado and anio_actual == str(anio_deseado):
+                print("✅ Mes y año correctos encontrados.")
+                return
+            # avanzar un mes
+            # OJO: en el sitio real el selector es 'span.next-month'
+            page.click("span.next-month")
+            page.wait_for_load_state("networkidle")
+            time.sleep(0.6)
+        except Exception as e:
+            page.screenshot(path="error_ir_a_mes.png")
+            raise Exception(f"❌ Error al intentar navegar al mes: {e}")
+    raise Exception("❌ No se alcanzó el mes solicitado (exceso de pasos).")
 
-        for _ in range(24):
-            try:
-                mes_actual = self.page.locator("div.title-month span").first.text_content(timeout=5000).strip().lower()
-                anio_actual = self.page.locator("div.title-year span").first.text_content(timeout=5000).strip()
-                print(f"📍 Calendario está en: {mes_actual} {anio_actual}")
+def scrape_audiencias_mes(page, mes: int, anio: int):
+    print(f"📅 Revisando {mes:02d}-{anio}")
+    ir_a_mes(page, mes, anio)
 
-                if mes_actual == mes_nombre and anio_actual == str(anio_deseado):
-                    print("✅ Mes y año correctos encontrados.")
-                    return
-                self.page.click("span.previous-month")
-                self.page.wait_for_timeout(1200)
-            except Exception as e:
-                self.page.screenshot(path="error_ir_a_mes_historico.png")
-                raise Exception(f"❌ Error navegando al mes: {e}")
+    audiencias_totales = []
 
-    def scrape_mes(self, mes: int, anio: int):
-        print(f"\n📅 Iniciando extracción de audiencias para {mes:02d}-{anio}")
-        self.ir_a_mes(mes, anio)
+    # Detectar paginación (si existe)
+    paginador = page.query_selector("ul.box-pagination-calendar")
+    if paginador:
+        paginas = paginador.query_selector_all("li > a.page-link")
+        total_paginas = len(paginas)
+    else:
+        total_paginas = 0
 
-        audiencias_totales = []
-        paginador = self.page.query_selector("ul.box-pagination-calendar")
-        total_paginas = len(paginador.query_selector_all("li > a.page-link")) if paginador else 0
-
-        for i in range(total_paginas + 1):
-            print(f"  📄 Página {i + 1}...")
-            try:
-                self.page.wait_for_selector("table#selectable tbody tr", timeout=10000)
-            except:
-                self.page.screenshot(path=f"error_audiencia_{mes:02d}-{anio}.png")
-                print(f"⚠️ Tabla de audiencias no encontrada en {mes:02d}-{anio}. Probablemente no hay datos.")
+    for i in range(total_paginas + 1):  # incluye página 1
+        print(f"  📄 Página {i + 1}...")
+        try:
+            # Puede no haber tabla en algunos meses (tratar como vacío)
+            if not page.query_selector("table#selectable tbody"):
+                print("  ↪️ No hay tabla de audiencias en este mes.")
                 return []
+            page.wait_for_selector("table#selectable tbody tr", timeout=8000)
+        except Exception:
+            page.screenshot(path=f"error_audiencia_{mes:02d}-{anio}.png")
+            print(f"⚠️ No se encontró tabla de audiencias en {mes:02d}-{anio}.")
+            return []
 
-            time.sleep(1)
-            audiencias = self.extraer_audiencias_mes()
-            audiencias_totales.extend(audiencias)
+        time.sleep(0.5)
+        audiencias = extraer_audiencias_mes(page)
+        audiencias_totales.extend(audiencias)
 
-            next_page = self.page.query_selector(f'ul.box-pagination-calendar li > a.page-link:text-is("{i + 2}")')
-            if next_page:
-                next_page.click()
-                self.page.wait_for_timeout(1000)
+        # Siguiente página por número
+        next_page = page.query_selector(f'ul.box-pagination-calendar li > a.page-link:text-is("{i + 2}")')
+        if next_page:
+            next_page.click()
+            page.wait_for_load_state("networkidle")
+            time.sleep(0.5)
 
-        return audiencias_totales
+    return audiencias_totales
 
-    def leer_ultima_fecha_guardada(self):
-        if not os.path.exists(self.output_path):
-            return datetime.today()
-        with open(self.output_path, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            fechas = [row["fecha"] for row in reader if row["fecha"]]
-        if not fechas:
-            return datetime.today()
-        fechas_ordenadas = sorted(fechas, key=lambda d: datetime.strptime(d, "%d-%m-%Y"))
-        fecha_mas_antigua = datetime.strptime(fechas_ordenadas[0], "%d-%m-%Y")
-        return fecha_mas_antigua
+def scrape_todos_los_meses_hacia_adelante():
+    keys_existentes = cargar_keys_existentes(CSV_PATH)
 
-    def guardar_csv(self):
-        if not self.nuevas_audiencias:
-            print("❌ No se encontraron nuevas audiencias.")
-            return
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=False)
+        page = browser.new_page()
+        page.goto(URL)
+        page.wait_for_load_state("domcontentloaded")
 
-        if os.path.exists(self.output_path):
-            with open(self.output_path, "r", encoding="utf-8") as f:
-                reader = list(csv.DictReader(f))
-        else:
-            reader = []
+        # Desde el mes actual en adelante
+        dt = datetime.today().replace(day=1)
+        mes_actual, anio_actual = dt.month, dt.year
+        meses_sin_resultados = 0
 
-        with open(self.output_path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=self.nuevas_audiencias[0].keys())
-            writer.writeheader()
-            writer.writerows(self.nuevas_audiencias + reader)
-        print(f"\n💾 {len(self.nuevas_audiencias)} nuevas audiencias agregadas al inicio de {self.output_path}")
+        pasos = 0  # límite de seguridad opcional
+        while meses_sin_resultados < MESES_SIN_RESULTADOS_LIMITE and pasos < 60:
+            filas_mes = scrape_audiencias_mes(page, mes_actual, anio_actual)
 
-    def correr_hacia_atras(self):
-        self.iniciar_navegador()
-        fecha_inicio = self.leer_ultima_fecha_guardada()
-        mes_actual = fecha_inicio.month
-        anio_actual = fecha_inicio.year
-
-        while self.meses_sin_resultados < self.limite_meses_sin_datos:
-            mes_actual -= 1
-            if mes_actual == 0:
-                mes_actual = 12
-                anio_actual -= 1
-
-            audiencias = self.scrape_mes(mes_actual, anio_actual)
-
-            if audiencias:
-                self.nuevas_audiencias.extend(audiencias)
-                print(f"✅ {len(audiencias)} audiencias encontradas en {mes_actual:02d}-{anio_actual}")
-                self.meses_sin_resultados = 0
+            if filas_mes:
+                # append inmediato (mes a mes) con dedupe
+                nuevas = append_mes(CSV_PATH, filas_mes, keys_existentes)
+                print(f"✅ {len(filas_mes)} filas encontradas, {nuevas} nuevas agregadas en {mes_actual:02d}-{anio_actual}")
+                meses_sin_resultados = 0
             else:
                 print(f"⚠️ Sin audiencias en {mes_actual:02d}-{anio_actual}")
-                self.meses_sin_resultados += 1
+                meses_sin_resultados += 1
 
-        self.guardar_csv()
-        self.cerrar_navegador()
+            # Avanzar al siguiente mes
+            dt = dt + relativedelta(months=1)
+            mes_actual, anio_actual = dt.month, dt.year
+            pasos += 1
+
+        browser.close()
+
+    print("🏁 Proceso finalizado.")
 
 if __name__ == "__main__":
-    scraper = CalendarioHistoricScraper()
-    scraper.correr_hacia_atras()
+    scrape_todos_los_meses_hacia_adelante()
