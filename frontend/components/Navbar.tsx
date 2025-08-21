@@ -1,18 +1,18 @@
-"use client"; // si estás usando app router
+"use client";
 
 import Link from "next/link";
+import Image from "next/image";
 
 export default function Navbar() {
   return (
-    <nav className="bg-white shadow-md px-6 py-4 flex justify-between items-center">
-      <div className="text-xl font-bold text-gray-800">
-        Visualizador TDLC
+    <nav className="bg-black px-6 py-4 flex justify-between items-center shadow-md">
+      <div className="flex items-center space-x-3">
+        <Image src="/logo_fk.png" alt="FK Logo" width={36} height={36} />
       </div>
-      <div className="space-x-4">
-        <Link href="/" className="text-gray-700 hover:text-blue-600">Inicio</Link>
-        <Link href="/calendar" className="text-gray-700 hover:text-blue-600">Sentencias</Link>
-        <Link href="/estadisticas" className="text-gray-700 hover:text-blue-600">Estadísticas</Link>
-        <Link href="/acerca" className="text-gray-700 hover:text-blue-600">Acerca de</Link>
+      <div className="space-x-6">
+        <Link href="/" className="text-white hover:text-blue-400">Inicio</Link>
+        <Link href="/pages/dashboard" className="text-white hover:text-blue-400">Dashboard</Link>
+        <Link href="/pages/calendar" className="text-white hover:text-blue-400">Calendario</Link>
       </div>
     </nav>
   );

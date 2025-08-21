@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Navbar from "../components/Navbar";
+import Footer from "../components/Footer"; 
 import { ReactNode } from "react";
 
 // Carga de fuentes
@@ -33,6 +34,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <Navbar />
         <main className="p-6">{children}</main>
+        <Footer /> 
       </body>
     </html>
   );

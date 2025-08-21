@@ -9,3 +9,6 @@ __pycache__/
 debug/
 
 rol_idcausa.csv
+
+notebooks/
+backend/notebooks/

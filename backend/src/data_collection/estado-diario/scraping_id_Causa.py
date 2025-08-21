@@ -6,16 +6,16 @@ import argparse
 
 # Lista fija de tipos de causa
 TIPOS_CAUSA = [
-    "Contencioso",
-    "No Contencioso",
-    "Instrucción de Carácter General",
-    "Normas Técnicas",
-    "Consulta Normativa",
-    "Recomendación Normativa",
     "Autorizaciones 39, F)",
-    "Avenimientos",
-    "Proposición Normativa",
-    "Acuerdos Extrajudiciales",
+    "No Contencioso",
+    "Contencioso",
+    "Nombramiento Comisión Arbitral",
+    "Expediente Recomendación Normativa",
+    "Contencioso Indemnización de Perjuicios",
+    "Recurso de Revisión Especial",
+    "ART39Ter",
+    "Desarchivo",
+    "Acuerdo Extrajudicial"
 ]
 
 def run_scraper(output_file, headless=True):
