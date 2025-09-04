@@ -89,6 +89,48 @@ PLANTILLAS_HTML = {
             </p>
         """
     },
+    "audiencia pública": {
+    "color": "#2697E1",
+    "nombre": "Audiencia Pública",
+    "cuerpo": f"""
+        <p style="font-size: 15px; color: {fk_text}; margin: 0 0 12px;">
+            Se ha agendado una <strong>Audiencia Pública</strong> en el TDLC.
+        </p>
+        <p style="font-size: 15px; color: {fk_text}; margin: 0 0 12px;">
+            <strong>📅 Fecha programada:</strong><br> {{fecha}}
+        </p>
+        <p style="font-size: 15px; color: {fk_text}; margin: 0 0 12px;">
+            <strong>⚖️ Rol de causa:</strong><br> {{rol}}
+        </p>
+        <p style="font-size: 15px; color: {fk_text}; margin: 0 0 12px;">
+            <strong>🆔 ID de causa:</strong><br> {{id_causa}}
+        </p>
+        <p style="font-size: 15px; color: {fk_text}; margin: 0 0 20px;">
+            <strong>📝 Carátula / Descripción:</strong><br> {{titulo}}
+        </p>
+    """
+    },
+    "vista de la causa": {
+        "color": "#2697E1",
+        "nombre": "Vista de la Causa",
+        "cuerpo": f"""
+            <p style="font-size: 15px; color: {fk_text}; margin: 0 0 12px;">
+                Se ha agendado una <strong>Vista de la Causa</strong> en el TDLC.
+            </p>
+            <p style="font-size: 15px; color: {fk_text}; margin: 0 0 12px;">
+                <strong>📅 Fecha programada:</strong><br> {{fecha}}
+            </p>
+            <p style="font-size: 15px; color: {fk_text}; margin: 0 0 12px;">
+                <strong>⚖️ Rol de causa:</strong><br> {{rol}}
+            </p>
+            <p style="font-size: 15px; color: {fk_text}; margin: 0 0 12px;">
+                <strong>🆔 ID de causa:</strong><br> {{id_causa}}
+            </p>
+            <p style="font-size: 15px; color: {fk_text}; margin: 0 0 20px;">
+                <strong>📝 Carátula / Descripción:</strong><br> {{titulo}}
+            </p>
+        """
+    },
     "resumen_diario": {
     "color": "#222222",
     "nombre": "Resumen Diario de Trámites del TDLC",

@@ -34,17 +34,20 @@ def get_causas_del_dia():
 
 @router.get("/tramites-del-dia")
 def get_tramites_del_dia():
-    """
-    Endpoint para obtener la lista completa de trámites realizados en el día, con todos sus detalles.
-    """
     if not os.path.exists(TRAMITES_DETALLE_FILE):
         raise HTTPException(status_code=404, detail="Archivo de trámites del día no encontrado.")
     
     try:
-        df = pd.read_csv(TRAMITES_DETALLE_FILE, dtype=str)
-        # Convierte el DataFrame completo a una lista de diccionarios para la respuesta JSON
-        # Incluye las columnas: idCausa,rol,TipoTramite,Fecha,Referencia,Foja,Link_Descarga,Tiene_Detalles,Tiene_Firmantes
-        tramites_del_dia = df.to_dict(orient="records")
-        return {"tramites_del_dia": tramites_del_dia}
+        df = pd.read_csv(TRAMITES_DETALLE_FILE, dtype=str, on_bad_lines='skip', engine='python').fillna('')
+        
+        columnas_esperadas = ["idCausa", "rol", "TipoTramite", "Fecha", "Referencia", "Foja", "Link_Descarga", "Tiene_Detalles", "Tiene_Firmantes"]
+        
+        if df.empty or not all(col in df.columns for col in columnas_esperadas):
+            return []
+
+        df = df[columnas_esperadas].replace({'nan': '', 'inf': '', '-inf': ''})
+
+        return df.to_dict(orient="records")
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al leer el archivo: {e}")

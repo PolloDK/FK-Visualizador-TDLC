@@ -1,6 +1,5 @@
 from fastapi import FastAPI
-from app.routes import causas
-from app.routes import estado_diario
+from app.routes import causas, estado_diario, calendario
 from fastapi.middleware.cors import CORSMiddleware
 
 
@@ -21,3 +20,4 @@ app.add_middleware(
 
 app.include_router(causas.router, prefix="/causas", tags=["Causas"])
 app.include_router(estado_diario.router, prefix="/estado-diario", tags=["Estado Diario"])
+app.include_router(calendario.router, prefix="/calendario", tags=["Calendario"])

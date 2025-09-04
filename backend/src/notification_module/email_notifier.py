@@ -65,8 +65,8 @@ def enviar_notificacion_evento(evento: dict):
     # Los datos se pasan de forma dinámica desde el diccionario 'evento'
     html = construir_html_email(
         tipo=evento["tipo"],
-        titulo=evento.get("descripcion", ""),
-        url=evento.get("link", ""),
+        titulo=evento.get("titulo", ""), 
+        url=evento.get("url", ""),        
         fecha=evento.get("fecha", ""),
         rol=evento.get("rol", ""),
         id_causa=evento.get("id_causa", "")
@@ -137,15 +137,13 @@ def enviar_correo_resumen_diario(fecha: str, total_tramites: int, listado_tramit
 
 # Ejemplo de uso (el __main__ ya no necesita construir todo el HTML)
 if __name__ == "__main__":
-    # Datos de ejemplo de un evento detectado
-    evento_ejemplo = {
-        "tipo": "Fallo o Sentencia",
-        "titulo": "Sentencia N°250 - Libre Competencia en Transporte Marítimo",
-        "url": "https://consultas.tdlc.cl/estadoDiario?idCausa=42421",
-        "fecha": "15-08-2025",
-        "rol": "C-123-2024",
-        "id_causa": "42421"
+    # Audiencia vista
+    evento_vista = {
+        "tipo": "vista de la causa",
+        "rol": "C-789-2025",
+        "fecha": "27-08-2025",
+        "id_causa": "12345", 
+        "titulo": "Vista de la causa en materia de libre competencia",  
+        "url": "https://consultas.tdlc.cl/audiencia?idCausa=12345"
     }
-
-    # Llamamos a la función genérica para enviar este evento de ejemplo
-    enviar_notificacion_evento(evento_ejemplo)
+    enviar_notificacion_evento(evento_vista)

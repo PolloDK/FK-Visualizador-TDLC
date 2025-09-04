@@ -41,74 +41,94 @@ def extraer_tramites_del_dia(page, idCausa: str, rol: str, fecha_estado_diario: 
         page.goto(url, wait_until="load", timeout=WAIT)
         page.wait_for_load_state("networkidle", timeout=WAIT)
     except TimeoutError:
-        print(f"⚠️ Primer intento fallido. Reintentando cargar la página de trámites para {rol}.")
+        print(f"⚠️ Primer intento fallido. Reintentando cargar {rol}")
         try:
             page.goto(url, wait_until="load", timeout=WAIT)
             page.wait_for_load_state("networkidle", timeout=WAIT)
         except TimeoutError:
-            print(f"❌ Fallo de carga de la página de trámites para {rol} después de 2 intentos.")
+            print(f"❌ Fallo al cargar trámites para {rol}")
             return []
 
-    tramites_del_dia = []
+    tramites_todos_los_cuadernos = []
+
     try:
-        rows = page.query_selector_all("table tbody tr")
-        if not rows:
-            print(f"⚠️ No se encontraron filas en la tabla de trámites para {rol}.")
+        select = page.query_selector("select[name='selectCuaderno']")
+        opciones = select.query_selector_all("option") if select else []
+        if not opciones:
+            print(f"⚠️ No se encontraron opciones de cuadernos en {rol}")
             return []
-    except Exception:
-        print(f"⚠️ No se pudo cargar la tabla de trámites para {rol}.")
+
+        for opcion in opciones:
+            nombre_cuaderno = opcion.inner_text().strip()
+
+            # Hacer clic en el select
+            select = page.locator("div:has-text('Cuaderno') select[name='selectCuaderno']").first
+            select.click()
+
+            # Clic en la opción con ese texto
+            page.get_by_role("option", name=nombre_cuaderno).click()
+
+            # Esperar a que se actualice la tabla
+            page.wait_for_timeout(1500)
+            page.wait_for_load_state("networkidle", timeout=WAIT)
+
+            page.wait_for_timeout(1000)  # Esperar a que cambie el contenido
+            page.wait_for_load_state("networkidle", timeout=WAIT)
+
+            # Volver a capturar filas de tabla
+            rows = page.query_selector_all("table tbody tr")
+
+            for row in rows:
+                try:
+                    fecha_elem = row.query_selector("span[data-bind*='formatearFecha(fecha())']")
+                    fecha_tramite_txt = fecha_elem.inner_text().strip() if fecha_elem else None
+
+                    if not fecha_tramite_txt or fecha_tramite_txt != fecha_estado_diario:
+                        continue
+
+                    tipo_tramite_elem = row.query_selector("span[data-bind*='tipoTramite']")
+                    referencia_elem = row.query_selector("span[data-bind*='referencia']")
+                    foja_elem = row.query_selector("span[data-bind*='foja()']")
+
+                    tiene_descarga = row.query_selector("span[title='Descargar Documento']") is not None
+                    tiene_detalles = row.query_selector("span[title='Ver Detalles']") is not None
+                    tiene_firmantes = row.query_selector("span[title='Ver Firmantes']") is not None
+
+                    link_url = ""
+                    if tiene_descarga:
+                        try:
+                            link_elem = row.query_selector("span[title='Descargar Documento']")
+                            with page.expect_download(timeout=5000) as download_info:
+                                page.evaluate("el => el.click()", link_elem)
+                            download = download_info.value
+                            link_url = download.url
+                        except TimeoutError:
+                            print(f"⚠️ Link descarga fallido para trámite en {rol} - cuaderno {value}")
+
+                    tramite = {
+                        "idCausa": idCausa,
+                        "rol": rol,
+                        "TipoTramite": tipo_tramite_elem.inner_text().strip() if tipo_tramite_elem else "",
+                        "Fecha": fecha_tramite_txt,
+                        "Referencia": referencia_elem.inner_text().strip() if referencia_elem else "",
+                        "Foja": foja_elem.inner_text().strip() if foja_elem else "",
+                        "Link_Descarga": link_url,
+                        "Tiene_Detalles": tiene_detalles,
+                        "Tiene_Firmantes": tiene_firmantes,
+                        "Cuaderno": opcion.inner_text().strip()
+                    }
+
+                    tramites_todos_los_cuadernos.append(tramite)
+
+                except Exception as e:
+                    print(f"⚠️ Error procesando fila en {rol} cuaderno {value}: {e}")
+                    continue
+
+    except Exception as e:
+        print(f"❌ Error al intentar recorrer cuadernos de {rol}: {e}")
         return []
 
-    for row in rows:
-        try:
-            # Extraer fecha primero para filtrar eficientemente
-            fecha_elem = row.query_selector("span[data-bind*='formatearFecha(fecha())']")
-            fecha_tramite_txt = fecha_elem.inner_text().strip() if fecha_elem else None
-            
-            # Solo procesamos si la fecha del trámite coincide con la del estado diario
-            if not fecha_tramite_txt or fecha_tramite_txt != fecha_estado_diario:
-                continue
-
-            # Extracción de datos usando selectores fiables (data-bind)
-            tipo_tramite_elem = row.query_selector("span[data-bind*='tipoTramite']")
-            referencia_elem = row.query_selector("span[data-bind*='referencia']")
-            foja_elem = row.query_selector("span[data-bind*='foja()']")
-            
-            # Verificar la existencia de elementos de botón/icono para detectar otras columnas
-            tiene_descarga = row.query_selector("span[title='Descargar Documento']") is not None
-            tiene_detalles = row.query_selector("span[title='Ver Detalles']") is not None
-            tiene_firmantes = row.query_selector("span[title='Ver Firmantes']") is not None
-
-            # Extracción del enlace de descarga simulando un clic si el botón existe
-            link_url = ""
-            if tiene_descarga:
-                link_elem = row.query_selector("span[title='Descargar Documento']")
-                try:
-                    with page.expect_download(timeout=5000) as download_info:
-                        page.evaluate("el => el.click()", link_elem)
-                    download = download_info.value
-                    link_url = download.url
-                except TimeoutError:
-                    print(f"⚠️ No se pudo obtener el link de descarga para un trámite en {rol}. Timeout.")
-                    pass
-
-            tramites_del_dia.append({
-                "idCausa": idCausa,
-                "rol": rol,
-                "TipoTramite": tipo_tramite_elem.inner_text().strip() if tipo_tramite_elem else "",
-                "Fecha": fecha_tramite_txt,
-                "Referencia": referencia_elem.inner_text().strip() if referencia_elem else "",
-                "Foja": foja_elem.inner_text().strip() if foja_elem else "",
-                "Link_Descarga": link_url,
-                "Tiene_Detalles": tiene_detalles,
-                "Tiene_Firmantes": tiene_firmantes
-            })
-
-        except Exception as e:
-            print(f"⚠️ Error procesando una fila de trámites para el rol {rol}: {e}")
-            continue
-
-    return tramites_del_dia
+    return tramites_todos_los_cuadernos
 
 def analizar_expediente(page, idCausa: str):
     url = f"{BASE}/estadoDiario?idCausa={idCausa}"
@@ -311,7 +331,6 @@ class EstadoDiarioScraper:
 
             browser.close()
 
-            # --- NUEVA LÓGICA: Guardar los resultados en un CSV temporal ---
             df_resultados = pd.DataFrame(self.resultados)
             if not df_resultados.empty:
                 os.makedirs(os.path.dirname(ESTADO_DIARIO_TMP_CSV), exist_ok=True)

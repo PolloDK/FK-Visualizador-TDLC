@@ -1,15 +1,71 @@
-# scrape_calendar_forward_append.py
+# calendar_tdlc.py
 from playwright.sync_api import sync_playwright
 import csv, os, time
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+import unicodedata
+import re
+import sys, os
+sys.path.append(os.path.abspath("backend"))
+from src.notification_module.email_notifier import enviar_notificacion_evento
+from src.notification_module.html_template import PLANTILLAS_HTML
+
 
 MESES_SIN_RESULTADOS_LIMITE = 3
 URL = "https://consultas.tdlc.cl/audiencia"
 CSV_PATH = "backend/data/calendar/calendario_audiencias.csv" 
 
 # ============== Utilidades CSV (append + dedupe) ==============
-HEADER = ["fecha","hora","rol","caratula","tipo_audiencia","estado","doc_resolucion"]
+HEADER = ["fecha","hora","rol","caratula","tipo_audiencia","estado"]
+
+def normalizar_texto(texto: str) -> str:
+    """Convierte texto a minúsculas, sin tildes ni espacios innecesarios"""
+    if not texto:
+        return ""
+    texto = unicodedata.normalize("NFKD", texto)
+    texto = texto.encode("ASCII", "ignore").decode("utf-8")
+    return re.sub(r"\s+", " ", texto).strip().lower()
+
+def normalizar_tipo_audiencia(tipo: str) -> str:
+    if not isinstance(tipo, str) or not tipo.strip():
+        return ""
+    tipo = tipo.strip()
+    if tipo.lower() == "audiencia pública":
+        return "Audiencia pública"
+    tipo_lower = tipo.lower()
+    tipo_limpio = re.sub(r"^audiencia\\s+", "", tipo_lower)
+    if "testimonial" in tipo_limpio:
+        return "Testimonial"
+    elif "absolución" in tipo_limpio or "absolucion" in tipo_limpio:
+        return "Absolución de posiciones"
+    elif "conciliación" in tipo_limpio or "conciliacion" in tipo_limpio:
+        return "Conciliación"
+    elif any(x in tipo_limpio for x in ["exhibición", "percepción", "documento"]):
+        return "Exhibición de documentos"
+    elif "experto" in tipo_limpio or "perito" in tipo_limpio:
+        return "Perito/Experto"
+    elif "vista" in tipo_limpio:
+        return "Vista de la causa"
+    elif "39 ter" in tipo_limpio:
+        return "Artículo 39 ter"
+    elif "amonestación" in tipo_limpio or "amonestacion" in tipo_limpio:
+        return "Amonestación"
+    elif "informante" in tipo_limpio:
+        return "Informantes"
+    elif "acuerdo extra" in tipo_limpio:
+        return "Acuerdo Extrajudicial"
+    elif "ad hoc" in tipo_limpio:
+        return "Ad hoc"
+    return tipo_limpio.capitalize()
+
+def es_audiencia_relevante(tipo: str) -> bool:
+    """Detecta si es 'audiencia pública' o 'vista de la causa', con tolerancia a errores menores"""
+    tipo_norm = normalizar_texto(tipo)
+    return (
+        "audiencia publica" in tipo_norm or
+        "vista de la causa" in tipo_norm or
+        "vista causa" in tipo_norm
+    )
 
 def cargar_keys_existentes(csv_path: str) -> set[tuple[str, str, str]]:
     keys = set()
@@ -36,16 +92,36 @@ def append_mes(csv_path: str, filas: list[dict], keys_existentes: set[tuple[str,
     for r in filas:
         key = ((r.get("fecha") or "").strip(), (r.get("hora") or "").strip(), (r.get("rol") or "").strip())
         if key and key not in keys_existentes:
-            nuevos.append({
+            nueva = {
                 "fecha": (r.get("fecha") or "").strip(),
                 "hora": (r.get("hora") or "").strip(),
                 "rol": (r.get("rol") or "").strip(),
                 "caratula": (r.get("caratula") or "").strip(),
-                "tipo_audiencia": (r.get("tipo_audiencia") or "").strip(),
+                "tipo_audiencia": normalizar_tipo_audiencia((r.get("tipo_audiencia") or "").strip()),
                 "estado": (r.get("estado") or "").strip(),
-                "doc_resolucion": (r.get("doc_resolucion") or "").strip(),
-            })
+            }
+            nuevos.append(nueva)
             keys_existentes.add(key)
+
+            # 🔔 Enviar notificación si es una audiencia relevante
+            if es_audiencia_relevante(nueva["tipo_audiencia"]):
+                tipo_evento = normalizar_texto(nueva["tipo_audiencia"])
+                print(f"🔔 Nueva audiencia relevante detectada: '{nueva['tipo_audiencia']}' para rol {nueva['rol']}")
+
+                evento = {
+                    "rol": nueva["rol"],
+                    "Fecha": nueva["fecha"],
+                    "tipo": tipo_evento,  # 👈 clave corregida
+                    "TipoTramite": nueva["tipo_audiencia"],
+                    "Referencia": nueva["caratula"],
+                    "Link_Descarga": "https://consultas.tdlc.cl/audiencia"
+                }
+
+                if tipo_evento in PLANTILLAS_HTML:
+                    enviar_notificacion_evento(evento)
+                else:
+                    print(f"❌ No se encontró plantilla para audiencia: '{tipo_evento}'")
+
 
     if not nuevos:
         print("🟰 Nada nuevo que agregar (todo duplicado).")
@@ -77,7 +153,6 @@ def extraer_audiencias_mes(page):
                 "caratula": cols[3].inner_text().strip(),
                 "tipo_audiencia": cols[4].inner_text().strip(),
                 "estado": cols[5].inner_text().strip(),
-                "doc_resolucion": cols[6].query_selector("a").get_attribute("href") if cols[6].query_selector("a") else ""
             })
         except Exception:
             continue
